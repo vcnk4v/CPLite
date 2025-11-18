@@ -1,0 +1,30 @@
+{
+  "user_rating": 1369,
+  "ai_recs": {
+    "ai_recs": {
+      "recommendations": [
+        {
+          "tag": "dynamic programming",
+          "min_difficulty": 1400,
+          "max_difficulty": 1700
+        },
+        { "tag": "graphs", "min_difficulty": 1300, "max_difficulty": 1600 },
+        {
+          "tag": "data structures",
+          "min_difficulty": 1300,
+          "max_difficulty": 1600
+        },
+        {
+          "tag": "dfs and similar",
+          "min_difficulty": 1300,
+          "max_difficulty": 1600
+        },
+        {
+          "tag": "binary search",
+          "min_difficulty": 1300,
+          "max_difficulty": 1600
+        }
+      ]
+    }
+  }
+}

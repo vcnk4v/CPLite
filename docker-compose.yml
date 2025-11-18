@@ -1,0 +1,315 @@
+version: "3.8"
+
+services:
+  # API Gateway
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "8000:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+    depends_on:
+      - user-service
+      - task-service
+      - codeforces-service
+      - ai-service
+      - recommendation-service
+      - notification-service
+    networks:
+      - cplite-network
+
+  # PostgreSQL for User Service
+  user-db:
+    image: postgres:13
+    environment:
+      POSTGRES_USER: ${USER_DB_USER:-cplite}
+      POSTGRES_PASSWORD: ${USER_DB_PASSWORD:-cplitepassword}
+      POSTGRES_DB: ${USER_DB_NAME:-user_service_db}
+    volumes:
+      - user-db-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - cplite-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${USER_DB_USER:-cplite}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # PostgreSQL for Task Service
+  task-db:
+    image: postgres:13
+    environment:
+      POSTGRES_USER: ${TASK_DB_USER:-cplite}
+      POSTGRES_PASSWORD: ${TASK_DB_PASSWORD:-cplitepassword}
+      POSTGRES_DB: ${TASK_DB_NAME:-task_service_db}
+    volumes:
+      - task-db-data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    networks:
+      - cplite-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${TASK_DB_USER:-cplite}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  notification-db:
+    image: postgres:13
+    environment:
+      POSTGRES_USER: ${NOTIFICATION_DB_USER:-cplite}
+      POSTGRES_PASSWORD: ${NOTIFICATION_DB_PASSWORD:-cplitepassword}
+      POSTGRES_DB: ${NOTIFICATION_DB_NAME:-notification_service_db}
+    volumes:
+      - notification-db-data:/var/lib/postgresql/data
+    ports:
+      - "5434:5432"
+    networks:
+      - cplite-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${NOTIFICATION_DB_USER:-cplite}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis for caching
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+    networks:
+      - cplite-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # User Service
+  user-service:
+    build:
+      context: ./user-service
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql://${USER_DB_USER:-cplite}:${USER_DB_PASSWORD:-cplitepassword}@user-db:5432/${USER_DB_NAME:-user_service_db}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+    ports:
+      - "8001:8000"
+    depends_on:
+      user-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - cplite-network
+    volumes:
+      - ./user-service:/app
+
+  # Task Service
+  task-service:
+    build:
+      context: ./task-service
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql://${TASK_DB_USER:-cplite}:${TASK_DB_PASSWORD:-cplitepassword}@task-db:5432/${TASK_DB_NAME:-task_service_db}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+    ports:
+      - "8002:8000"
+    depends_on:
+      task-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - cplite-network
+    volumes:
+      - ./task-service:/app
+
+  codeforces-service:
+    build:
+      context: ./codeforces_service
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      - CODEFORCES_API_KEY=${CODEFORCES_API_KEY:-your_api_key}
+      - CODEFORCES_API_SECRET=${CODEFORCES_API_SECRET:-your_api_secret}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+    ports:
+      - "8003:8000"
+    networks:
+      - cplite-network
+    depends_on:
+      - redis
+    volumes:
+      - ./codeforces_service:/app
+
+  # Replace the summary-db and ai-service sections with these changes:
+
+  # AI Service with Summary DB Connection
+  summary-db:
+    image: postgres:13
+    environment:
+      POSTGRES_USER: ${SUMMARY_DB_USER:-cplite}
+      POSTGRES_PASSWORD: ${SUMMARY_DB_PASSWORD:-cplitepassword}
+      POSTGRES_DB: ${SUMMARY_DB_NAME:-summary_service_db}
+    ports:
+      - "5435:5432" # Changed port to avoid conflict with user-db
+    volumes:
+      - summary-db-data:/var/lib/postgresql/data
+    networks:
+      - cplite-network # Changed to use the main network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cplite"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # AI Service
+  ai-service:
+    build:
+      context: ./ai_service
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-your_gemini_api_key} # Add Gemini API Key
+      - DATABASE_URL=postgresql://cplite:cplitepassword@summary-db:5432/summary_service_db
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+    ports:
+      - "8004:8000"
+    networks:
+      - cplite-network
+    volumes:
+      - ./ai_service:/app
+    depends_on:
+      summary-db:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./cplite-frontend
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      - VITE_API_URL=${API_GATEWAY_URL:-http://localhost:8000}/api
+    ports:
+      - "3000:80"
+    networks:
+      - cplite-network
+    depends_on:
+      - nginx
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672" # AMQP protocol port
+      - "15672:15672" # Management UI port
+    environment:
+      - RABBITMQ_USER=guest
+      - RABBITMQ_PASSWORD=guest
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    networks:
+      - cplite-network
+    healthcheck:
+      test: ["CMD", "rabbitmqctl", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Recommendation Service API
+  recommendation-service:
+    build:
+      context: ./recommendation_service
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      - USER_SERVICE_URL=http://user-service:8000
+      - TASK_SERVICE_URL=http://task-service:8000
+      - CODEFORCES_SERVICE_URL=http://codeforces-service:8000
+      - AI_SERVICE_URL=http://ai-service:8000
+      - SERVICE_TOKEN=${RECOMMENDATION_SERVICE_TOKEN}
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+    ports:
+      - "8006:8000" # Expose on port 8006
+    volumes:
+      - ./recommendation_service:/app
+      - recommendation-data:/app/data # Persistent volume for job status
+    networks:
+      - cplite-network
+    restart: unless-stopped
+    depends_on:
+      - user-service
+      - task-service
+      - codeforces-service
+      - ai-service
+
+  # Recommendation Service Cron Job
+  recommendation-cron:
+    build:
+      context: ./recommendation_service/cron
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+    volumes:
+      - ./recommendation_service/cron:/etc/cron.d
+      - /var/log/cron:/var/log/cron
+    networks:
+      - cplite-network
+    depends_on:
+      - recommendation-service
+    restart: unless-stopped
+
+  notification-service:
+    build:
+      context: ./notification-service
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql://${NOTIFICATION_DB_USER:-cplite}:${NOTIFICATION_DB_PASSWORD:-cplitepassword}@notification-db:5432/${NOTIFICATION_DB_NAME:-notification_service_db}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+    ports:
+      - "8005:8000"
+    depends_on:
+      notification-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - cplite-network
+    volumes:
+      - ./notification-service:/app
+
+networks:
+  cplite-network:
+    driver: bridge
+
+volumes:
+  user-db-data:
+  task-db-data:
+  notification-db-data:
+  rabbitmq-data:
+  recommendation-data: # New volume for persistent recommendation data
+  summary-db-data:

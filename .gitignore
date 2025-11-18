@@ -1,0 +1,6 @@
+**/__pycache__/
+.DS_Store
+#remove .log files
+*.log
+*.venv
+**/job_lock.json

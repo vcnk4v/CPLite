@@ -1,0 +1,2 @@
+# Run every 2 minutes
+*/2 * * * * /usr/local/bin/run_job.sh >> /var/log/cron/cron.log 2>&1

@@ -1,0 +1,2 @@
+# Run every Sunday at midnight
+0 0 * * 0 /usr/local/bin/run_job.sh >> /var/log/cron/cron.log 2>&1
